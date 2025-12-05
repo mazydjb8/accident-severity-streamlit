@@ -39,72 +39,64 @@ grav_mapping = {
 @st.cache_resource
 def train_rf_model(df: pd.DataFrame):
     """
-    Train a Random Forest on BAAC data and return the fitted pipeline.
-    Safe + limited in size to avoid memory/time issues.
+    Entraîne un Random Forest sur les mêmes features que dans le notebook
+    et renvoie le pipeline prêt pour la prédiction.
     """
-    try:
-        # Features used in the model
-        features_all = [
-            "age",
-            "sexe",
-            "categorie_usager",
-            "motif_trajet",
-            "categorie_route",
-            "meteo_code",
-            "luminosite",
-            "regime_circulation",
-            "etat_surface",
-        ]
-        target = "gravite"
+    # mêmes features que dans ton code de notebook
+    features_all = [
+        "age",
+        "sexe",
+        "categorie_usager",    # catu
+        "motif_trajet",        # trajet
+        "categorie_route",     # catr
+        "meteo_code",          # atm
+        "luminosite",          # lum
+        "regime_circulation",  # circ
+        "etat_surface",        # surf
+    ]
+    target = "gravite"
 
-        # Keep only existing columns
-        features = [col for col in features_all if col in df.columns]
-        if target not in df.columns or not features:
-            st.error("Model training: target or feature columns are missing.")
-            return None
-
-        # Clean subset
-        df_model = df[features + [target]].dropna()
-        if df_model.empty:
-            st.error("Model training: no data available after dropping NA.")
-            return None
-
-        # ⚠️ Limit size for Streamlit Cloud (to avoid time/memory crash)
-        if len(df_model) > 40000:
-            df_model = df_model.sample(40000, random_state=42)
-
-        X = df_model[features]
-        y = df_model[target]
-
-        # Numeric / categorical split
-        num_features = [col for col in features if col == "age"]
-        cat_features = [col for col in features if col != "age"]
-
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features),
-                ("num", "passthrough", num_features),
-            ]
-        )
-
-        rf = Pipeline(steps=[
-            ("preprocessor", preprocessor),
-            ("classifier", RandomForestClassifier(
-                n_estimators=200,
-                max_depth=None,
-                random_state=42,
-                class_weight="balanced",
-                n_jobs=-1,
-            )),
-        ])
-
-        rf.fit(X, y)
-        return rf
-
-    except Exception as e:
-        st.error(f"Error while training Random Forest: {e}")
+    # Ne garder que ce qui existe vraiment
+    features = [col for col in features_all if col in df.columns]
+    if target not in df.columns or not features:
+        st.error("Model training: target or feature columns are missing.")
         return None
 
+    # Sous-ensemble propre
+    df_model = df[features + [target]].dropna()
+    if df_model.empty:
+        st.error("Model training: no data available after dropping NA.")
+        return None
+
+    X = df_model[features]
+    y = df_model[target]
+
+    # Numérique / catégoriel
+    num_features = [col for col in features if col == "age"]
+    cat_features = [col for col in features if col != "age"]
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features),
+            ("num", "passthrough", num_features),
+        ]
+    )
+
+    rf = Pipeline(steps=[
+        ("preprocessor", preprocessor),
+        ("classifier", RandomForestClassifier(
+            n_estimators=200,          # un peu plus léger que 300
+            max_depth=None,
+            random_state=42,
+            class_weight="balanced",
+            n_jobs=-1
+        ))
+    ])
+
+    # on entraîne sur tout le jeu pour maximiser l’info
+    rf.fit(X, y)
+
+    return rf
 
 # modèle global, entraîné une seule fois (grâce au cache)
 rf_pipeline = train_rf_model(df)
