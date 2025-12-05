@@ -218,33 +218,54 @@ elif page == "4. Descriptive statistics":
     if df_filtered.empty:
         st.warning("No data available with the current filters.")
     else:
+        # -------------------------
         # Age distribution
-        if df_filtered["age"].notna().sum() > 0:
+        # -------------------------
+        if "age" in df_filtered.columns and df_filtered["age"].notna().sum() > 0:
             fig_age = px.histogram(
-                df_filtered,
+                df_filtered.dropna(subset=["age"]),
                 x="age",
                 nbins=40,
                 title="Age distribution",
             )
             st.plotly_chart(fig_age, use_container_width=True)
+        else:
+            st.info("Age is not available for the current filter selection.")
 
+        # -------------------------
         # Severity distribution
-        fig_sev = px.histogram(
-            df_filtered,
-            x="gravite_label",
-            title="Distribution of injury severity",
-        )
-        st.plotly_chart(fig_sev, use_container_width=True)
+        # -------------------------
+        if "gravite_label" in df_filtered.columns:
+            df_sev = df_filtered.dropna(subset=["gravite_label"]).copy()
+            # On force en string pour éviter les soucis de type/catégorie
+            df_sev["gravite_label"] = df_sev["gravite_label"].astype(str)
 
-        # Time-of-day
-        if "heure" in df_filtered.columns:
+            if df_sev.empty:
+                st.warning("No severity data available for the current filter selection.")
+            else:
+                fig_sev = px.histogram(
+                    df_sev,
+                    x="gravite_label",
+                    title="Distribution of injury severity",
+                )
+                st.plotly_chart(fig_sev, use_container_width=True)
+        else:
+            st.error("Column 'gravite_label' is missing from the dataset.")
+
+        # -------------------------
+        # Time-of-day distribution
+        # -------------------------
+        if "heure" in df_filtered.columns and df_filtered["heure"].notna().sum() > 0:
+            df_hour = df_filtered.dropna(subset=["heure"])
             fig_hour = px.histogram(
-                df_filtered,
+                df_hour,
                 x="heure",
                 nbins=24,
                 title="Accidents by hour of day",
             )
             st.plotly_chart(fig_hour, use_container_width=True)
+        else:
+            st.info("No valid 'heure' data available for the current filters.")
 
         st.write(
             """
@@ -258,6 +279,7 @@ elif page == "4. Descriptive statistics":
               proportion of severe outcomes.
             """
         )
+
 
 # ------------------------------------------------
 # PAGE 5 : CORRELATION ANALYSIS
