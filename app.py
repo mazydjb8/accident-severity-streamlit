@@ -209,7 +209,7 @@ elif page == "4. Descriptive statistics":
     st.title("Descriptive statistics")
 
     st.write("""
-    This section provides a structured exploratory analysis based on
+    This section provides a structured exploratory analysis based on  
     **(1) user vulnerabilities, (2) environmental risk factors, and (3) temporal risk patterns**.
     """)
 
@@ -219,6 +219,7 @@ elif page == "4. Descriptive statistics":
         df_desc = df_filtered.copy()
 
         # ============= PREPROCESSING ============
+        # Severity (numeric + label)
         df_desc["severity"] = df_desc["gravite"]
         df_desc["severity_label"] = df_desc["gravite"].map(grav_mapping)
 
@@ -229,9 +230,38 @@ elif page == "4. Descriptive statistics":
         sex_map = {1: "Male", 2: "Female"}
         df_desc["sex_label"] = df_desc["sexe"].map(sex_map).fillna("Unknown")
 
-        # Time
-        df_desc["hour"] = df_desc["heure_accident"]
-        df_desc["month"] = df_desc["date"].dt.month
+        # Time handling (robust)
+        # Hour (can be float or string)
+        if "heure_accident" in df_desc.columns:
+            df_desc["hour"] = pd.to_numeric(df_desc["heure_accident"], errors="coerce")
+        else:
+            df_desc["hour"] = np.nan
+
+        # Month from date (string -> datetime)
+        if "date" in df_desc.columns:
+            df_desc["date_parsed"] = pd.to_datetime(
+                df_desc["date"], errors="coerce", dayfirst=True
+            )
+            df_desc["month"] = df_desc["date_parsed"].dt.month
+        else:
+            df_desc["month"] = np.nan
+
+        # Speed category (if not already there)
+        if "vma_cat" in df_desc.columns:
+            df_desc["speed_cat"] = df_desc["vma_cat"]
+        elif "vitesse_max" in df_desc.columns:
+            df_desc["speed_cat"] = pd.cut(
+                df_desc["vitesse_max"],
+                bins=[0, 30, 50, 70, 90, 110, 150],
+                labels=["≤30", "31–50", "51–70", "71–90", "91–110", ">110"],
+                include_lowest=True,
+            )
+        else:
+            df_desc["speed_cat"] = np.nan
+
+        # Light labels
+        lumi_map = {1: "Daylight", 2: "Twilight", 3: "Night (lit)", 4: "Night (unlit)"}
+        df_desc["light_label"] = df_desc["luminosite"].map(lumi_map)
 
         # =================================================
         # 1️⃣ USER VULNERABILITY ANALYSIS
@@ -242,29 +272,61 @@ elif page == "4. Descriptive statistics":
 
         # G1: Age distribution
         with colA:
-            fig_age = px.histogram(df_desc, x="age", nbins=40, title="Age distribution")
-            st.plotly_chart(fig_age, use_container_width=True)
+            if df_desc["age"].notna().sum() > 0:
+                fig_age = px.histogram(
+                    df_desc.dropna(subset=["age"]),
+                    x="age",
+                    nbins=40,
+                    title="Age distribution",
+                )
+                st.plotly_chart(fig_age, use_container_width=True)
+            else:
+                st.info("No valid age information available.")
 
-        # G2: Probability of severity by age
+        # G2: Average severity by age
         with colB:
-            tmp = df_desc.groupby("age")["severity"].mean().reset_index()
-            fig_age_sev = px.line(tmp, x="age", y="severity",
-                                  title="Average severity by age (probability)")
-            st.plotly_chart(fig_age_sev, use_container_width=True)
+            tmp = (
+                df_desc.dropna(subset=["age"])
+                .groupby("age")["severity"]
+                .mean()
+                .reset_index()
+            )
+            # On évite la courbe bruitée sur les âges rares
+            if not tmp.empty:
+                fig_age_sev = px.line(
+                    tmp,
+                    x="age",
+                    y="severity",
+                    title="Average severity by age",
+                )
+                st.plotly_chart(fig_age_sev, use_container_width=True)
 
         colC, colD = st.columns(2)
 
         # G3: Severity rate by user type
         with colC:
-            tmp = df_desc.groupby("user_type")["severity"].mean().reset_index()
-            fig_user_sev = px.bar(tmp, x="user_type", y="severity",
-                                  title="Severity rate by user type")
+            tmp = (
+                df_desc.groupby("user_type")["severity"]
+                .mean()
+                .reset_index()
+                .sort_values("severity", ascending=False)
+            )
+            fig_user_sev = px.bar(
+                tmp,
+                x="user_type",
+                y="severity",
+                title="Average severity by user type",
+            )
             st.plotly_chart(fig_user_sev, use_container_width=True)
 
         # G4: Severity by sex (boxplot)
         with colD:
-            fig_sex_box = px.box(df_desc, x="sex_label", y="severity",
-                                 title="Distribution of severity by sex")
+            fig_sex_box = px.box(
+                df_desc,
+                x="sex_label",
+                y="severity",
+                title="Distribution of severity by sex",
+            )
             st.plotly_chart(fig_sex_box, use_container_width=True)
 
         # =================================================
@@ -274,44 +336,92 @@ elif page == "4. Descriptive statistics":
 
         colE, colF = st.columns(2)
 
+        road_col = "type_route_simple"
+        weather_col = "meteo_simple"
+
         # G5: Boxplot severity by road type
         with colE:
-            road_col = "type_route_simple"
             if road_col in df_desc.columns:
-                fig_road = px.box(df_desc, x=road_col, y="severity",
-                                  title="Severity by road type")
+                fig_road = px.box(
+                    df_desc,
+                    x=road_col,
+                    y="severity",
+                    title="Severity by road type",
+                )
                 st.plotly_chart(fig_road, use_container_width=True)
+            else:
+                st.info("Road type information is not available in this subset.")
 
         # G6: Severity rate by weather
         with colF:
-            weather_col = "meteo_simple"
             if weather_col in df_desc.columns:
-                tmp = df_desc.groupby(weather_col)["severity"].mean().reset_index()
-                fig_weather = px.bar(tmp, x=weather_col, y="severity",
-                                     title="Severity rate by weather condition")
+                tmp = (
+                    df_desc.groupby(weather_col)["severity"]
+                    .mean()
+                    .reset_index()
+                    .sort_values("severity", ascending=False)
+                )
+                fig_weather = px.bar(
+                    tmp,
+                    x=weather_col,
+                    y="severity",
+                    title="Average severity by weather condition",
+                )
                 st.plotly_chart(fig_weather, use_container_width=True)
 
         colG, colH = st.columns(2)
 
-        # G7: Severity rate by light condition
+        # G7: Severity rate by road surface condition
         with colG:
-            lumi_map = {1: "Daylight", 2: "Twilight", 3: "Night (lit)", 4: "Night (unlit)"}
-            df_desc["light_label"] = df_desc["luminosite"].map(lumi_map)
-            tmp = df_desc.groupby("light_label")["severity"].mean().reset_index()
-            fig_light = px.bar(tmp, x="light_label", y="severity",
-                               title="Severity rate by light condition")
-            st.plotly_chart(fig_light, use_container_width=True)
+            if "etat_surface" in df_desc.columns:
+                tmp = (
+                    df_desc.groupby("etat_surface")["severity"]
+                    .mean()
+                    .reset_index()
+                    .sort_values("severity", ascending=False)
+                )
+                fig_surface = px.bar(
+                    tmp,
+                    x="etat_surface",
+                    y="severity",
+                    title="Average severity by surface condition (code)",
+                )
+                st.plotly_chart(fig_surface, use_container_width=True)
 
         # G8: Heatmap road × weather
         with colH:
-            if weather_col in df_desc.columns and road_col in df_desc.columns:
-                tmp = df_desc.groupby([road_col, weather_col])["severity"].mean().reset_index()
+            if (weather_col in df_desc.columns) and (road_col in df_desc.columns):
+                tmp = (
+                    df_desc.groupby([road_col, weather_col])["severity"]
+                    .mean()
+                    .reset_index()
+                )
                 fig_heat_rw = px.density_heatmap(
-                    tmp, x=road_col, y=weather_col, z="severity",
+                    tmp,
+                    x=road_col,
+                    y=weather_col,
+                    z="severity",
                     color_continuous_scale="RdBu_r",
-                    title="Heatmap: severity by road type × weather"
+                    title="Heatmap: severity by road type × weather",
                 )
                 st.plotly_chart(fig_heat_rw, use_container_width=True)
+
+        # G9: Severity by speed limit category
+        st.subheader("Speed environment")
+        if df_desc["speed_cat"].notna().any():
+            tmp = (
+                df_desc.dropna(subset=["speed_cat"])
+                .groupby("speed_cat")["severity"]
+                .mean()
+                .reset_index()
+            )
+            fig_speed = px.bar(
+                tmp,
+                x="speed_cat",
+                y="severity",
+                title="Average severity by speed limit category",
+            )
+            st.plotly_chart(fig_speed, use_container_width=True)
 
         # =================================================
         # 3️⃣ TEMPORAL RISK PATTERNS
@@ -320,28 +430,62 @@ elif page == "4. Descriptive statistics":
 
         colI, colJ = st.columns(2)
 
-        # G9: Hourly severity rate
+        # G10: Hourly severity rate
         with colI:
-            tmp = df_desc.groupby("hour")["severity"].mean().reset_index()
-            fig_hour = px.line(tmp, x="hour", y="severity",
-                               title="Severity rate by hour of day")
-            st.plotly_chart(fig_hour, use_container_width=True)
-
-        # G10: Heatmap hour × user type
-        with colJ:
-            tmp = df_desc.groupby(["hour", "user_type"])["severity"].mean().reset_index()
-            fig_heat_hu = px.density_heatmap(
-                tmp, x="hour", y="user_type", z="severity",
-                title="Heatmap: severity by hour × user type",
-                color_continuous_scale="Viridis"
+            tmp = (
+                df_desc.dropna(subset=["hour"])
+                .groupby("hour")["severity"]
+                .mean()
+                .reset_index()
             )
-            st.plotly_chart(fig_heat_hu, use_container_width=True)
+            if not tmp.empty:
+                fig_hour = px.line(
+                    tmp,
+                    x="hour",
+                    y="severity",
+                    title="Average severity by hour of day",
+                )
+                st.plotly_chart(fig_hour, use_container_width=True)
+            else:
+                st.info("No valid hour information for the current filters.")
 
-        # G11: Monthly severity pattern
-        tmp = df_desc.groupby("month")["severity"].mean().reset_index()
-        fig_month = px.line(tmp, x="month", y="severity",
-                            title="Monthly severity pattern")
-        st.plotly_chart(fig_month, use_container_width=True)
+        # G11: Heatmap hour × user type
+        with colJ:
+            tmp = (
+                df_desc.dropna(subset=["hour"])
+                .groupby(["hour", "user_type"])["severity"]
+                .mean()
+                .reset_index()
+            )
+            if not tmp.empty:
+                fig_heat_hu = px.density_heatmap(
+                    tmp,
+                    x="hour",
+                    y="user_type",
+                    z="severity",
+                    title="Heatmap: severity by hour × user type",
+                    color_continuous_scale="Viridis",
+                )
+                st.plotly_chart(fig_heat_hu, use_container_width=True)
+
+        # G12: Monthly severity pattern
+        tmp = (
+            df_desc.dropna(subset=["month"])
+            .groupby("month")["severity"]
+            .mean()
+            .reset_index()
+        )
+        if not tmp.empty:
+            fig_month = px.line(
+                tmp,
+                x="month",
+                y="severity",
+                title="Monthly severity pattern",
+            )
+            st.plotly_chart(fig_month, use_container_width=True)
+        else:
+            st.info("No valid monthly information available for the current filters.")
+
 
 # ------------------------------------------------
 # PAGE 5 : CORRELATION ANALYSIS
