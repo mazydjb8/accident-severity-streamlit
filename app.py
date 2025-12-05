@@ -4,9 +4,9 @@ import folium
 from streamlit_folium import st_folium
 import plotly.express as px
 import numpy as np
-
-# Optional: real-time prediction model
+import os
 import joblib
+
 
 # ------------------------------------------------
 # Load data (cached for performance)
@@ -22,13 +22,28 @@ df = load_data()
 # ------------------------------------------------
 # Try to load Random Forest pipeline (optional)
 # ------------------------------------------------
+
 @st.cache_resource
 def load_model():
-    try:
-        model = joblib.load("rf_pipeline.pkl")   # pipeline from your notebook
-        return model
-    except Exception:
+    path = "rf_pipeline.pkl"
+
+    # 1. Vérifier que le fichier existe bien côté Streamlit
+    if not os.path.exists(path):
+        st.warning(f"Model file '{path}' was not found in the app directory.")
+        st.write(f"Current working directory: {os.getcwd()}")
+        st.write(f"Files here: {os.listdir('.')}")
         return None
+
+    # 2. Essayer de charger et afficher l'erreur exacte si ça plante
+    try:
+        model = joblib.load(path)
+        st.success("Random Forest model successfully loaded.")
+        return model
+    except Exception as e:
+        st.error("Error while loading 'rf_pipeline.pkl'.")
+        st.write(f"Details: {e}")
+        return None
+
 
 rf_pipeline = load_model()
 
