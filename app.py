@@ -218,65 +218,68 @@ elif page == "4. Descriptive statistics":
     if df_filtered.empty:
         st.warning("No data available with the current filters.")
     else:
-        # -------------------------
-        # Age distribution
-        # -------------------------
+        # ----- Age distribution -----
         if "age" in df_filtered.columns and df_filtered["age"].notna().sum() > 0:
             fig_age = px.histogram(
-                df_filtered.dropna(subset=["age"]),
+                df_filtered,
                 x="age",
                 nbins=40,
                 title="Age distribution",
             )
             st.plotly_chart(fig_age, use_container_width=True)
+
+        # ----- Severity distribution (built from numeric 'gravite') -----
+        if "gravite" not in df_filtered.columns:
+            st.error("The numeric severity column 'gravite' is missing.")
         else:
-            st.info("Age is not available for the current filter selection.")
+            df_tmp = df_filtered.copy()
+            df_tmp["gravite_str"] = df_tmp["gravite"].map(grav_mapping)
 
-        # -------------------------
-        # Severity distribution
-        # -------------------------
-        if "gravite_label" in df_filtered.columns:
-            df_sev = df_filtered.dropna(subset=["gravite_label"]).copy()
-            # On force en string pour éviter les soucis de type/catégorie
-            df_sev["gravite_label"] = df_sev["gravite_label"].astype(str)
-
-            if df_sev.empty:
-                st.warning("No severity data available for the current filter selection.")
+            if df_tmp["gravite_str"].dropna().empty:
+                st.warning("No valid severity data for the current filters.")
             else:
                 fig_sev = px.histogram(
-                    df_sev,
-                    x="gravite_label",
+                    df_tmp,
+                    x="gravite_str",
                     title="Distribution of injury severity",
+                    labels={"gravite_str": "Severity"},
                 )
                 st.plotly_chart(fig_sev, use_container_width=True)
-        else:
-            st.error("Column 'gravite_label' is missing from the dataset.")
 
-        # -------------------------
-        # Time-of-day distribution
-        # -------------------------
-        if "heure" in df_filtered.columns and df_filtered["heure"].notna().sum() > 0:
-            df_hour = df_filtered.dropna(subset=["heure"])
-            fig_hour = px.histogram(
-                df_hour,
-                x="heure",
-                nbins=24,
-                title="Accidents by hour of day",
-            )
-            st.plotly_chart(fig_hour, use_container_width=True)
+        # ----- Time-of-day histogram (use 'heure_accident') -----
+        hour_col = None
+        if "heure" in df_filtered.columns:
+            hour_col = "heure"
+        elif "heure_accident" in df_filtered.columns:
+            hour_col = "heure_accident"
+
+        if hour_col is None:
+            st.info("No hour column available in the dataset.")
         else:
-            st.info("No valid 'heure' data available for the current filters.")
+            col_no_na = df_filtered[hour_col].dropna()
+            if col_no_na.empty:
+                st.info("No valid hour data available for the current filters.")
+            else:
+                fig_hour = px.histogram(
+                    df_filtered,
+                    x=hour_col,
+                    nbins=24,
+                    title="Accidents by hour of day",
+                    labels={hour_col: "Hour"},
+                )
+                st.plotly_chart(fig_hour, use_container_width=True)
 
         st.write(
             """
-            Main observations, which remain stable across most filters:
+            Main observations, which are stable across most filters:
+
             - Severe accidents are more frequent among older users and
               vulnerable road users (pedestrians and two-wheelers).  
             - Most accidents occur during everyday mobility (commuting,
-              local trips), with clear peaks at the beginning and end of the
-              working day.  
-            - Adverse weather and poor visibility systematically increase the
-              proportion of severe outcomes.
+              local trips), with clear peaks at the beginning and end of
+              the working day.  
+            - Adverse weather and poor visibility systematically increase
+              the proportion of severe outcomes.
             """
         )
 
