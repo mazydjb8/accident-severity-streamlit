@@ -13,7 +13,9 @@ import joblib
 # ------------------------------------------------
 @st.cache_data
 def load_data():
-    return pd.read_csv("usagers_final.csv")
+    url = "https://drive.google.com/uc?export=download&id=1oLPYkBuwTavj7wqpokPIC-r7gJnECP0R"
+    return pd.read_csv(url)
+
 
 df = load_data()
 
