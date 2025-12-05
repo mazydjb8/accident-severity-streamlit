@@ -5,7 +5,13 @@ from streamlit_folium import st_folium
 import plotly.express as px
 import numpy as np
 import os
-import joblib
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
 
 
 # ------------------------------------------------
@@ -23,29 +29,78 @@ df = load_data()
 # Try to load Random Forest pipeline (optional)
 # ------------------------------------------------
 
+grav_mapping = {
+    1: "Uninjured",
+    2: "Slightly injured",
+    3: "Hospitalised",
+    4: "Killed"
+}
+
 @st.cache_resource
-def load_model():
-    path = "rf_pipeline.pkl"
+def train_rf_model(df: pd.DataFrame):
+    """
+    Entraîne un Random Forest sur les mêmes features que dans le notebook
+    et renvoie le pipeline prêt pour la prédiction.
+    """
+    # mêmes features que dans ton code de notebook
+    features_all = [
+        "age",
+        "sexe",
+        "categorie_usager",    # catu
+        "motif_trajet",        # trajet
+        "categorie_route",     # catr
+        "meteo_code",          # atm
+        "luminosite",          # lum
+        "regime_circulation",  # circ
+        "etat_surface",        # surf
+    ]
+    target = "gravite"
 
-    # 1. Vérifier que le fichier existe bien côté Streamlit
-    if not os.path.exists(path):
-        st.warning(f"Model file '{path}' was not found in the app directory.")
-        st.write(f"Current working directory: {os.getcwd()}")
-        st.write(f"Files here: {os.listdir('.')}")
+    # Ne garder que ce qui existe vraiment
+    features = [col for col in features_all if col in df.columns]
+    if target not in df.columns or not features:
+        st.error("Model training: target or feature columns are missing.")
         return None
 
-    # 2. Essayer de charger et afficher l'erreur exacte si ça plante
-    try:
-        model = joblib.load(path)
-        st.success("Random Forest model successfully loaded.")
-        return model
-    except Exception as e:
-        st.error("Error while loading 'rf_pipeline.pkl'.")
-        st.write(f"Details: {e}")
+    # Sous-ensemble propre
+    df_model = df[features + [target]].dropna()
+    if df_model.empty:
+        st.error("Model training: no data available after dropping NA.")
         return None
 
+    X = df_model[features]
+    y = df_model[target]
 
-rf_pipeline = load_model()
+    # Numérique / catégoriel
+    num_features = [col for col in features if col == "age"]
+    cat_features = [col for col in features if col != "age"]
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features),
+            ("num", "passthrough", num_features),
+        ]
+    )
+
+    rf = Pipeline(steps=[
+        ("preprocessor", preprocessor),
+        ("classifier", RandomForestClassifier(
+            n_estimators=200,          # un peu plus léger que 300
+            max_depth=None,
+            random_state=42,
+            class_weight="balanced",
+            n_jobs=-1
+        ))
+    ])
+
+    # on entraîne sur tout le jeu pour maximiser l’info
+    rf.fit(X, y)
+
+    return rf
+
+# modèle global, entraîné une seule fois (grâce au cache)
+rf_pipeline = train_rf_model(df)
+
 
 grav_mapping = {
     1: "Uninjured",
@@ -604,17 +659,16 @@ elif page == "7. Live prediction":
     st.title("Live prediction of accident severity")
 
     if rf_pipeline is None:
-        st.warning(
-            "The Random Forest pipeline (`rf_pipeline.pkl`) is not available "
-            "in the app directory. Save your trained pipeline from the "
-            "notebook and reload the app to use this page."
+        st.error(
+            "The Random Forest model could not be trained. "
+            "Please check that the dataset contains the expected columns."
         )
     else:
         st.write(
             """
             This form simulates the information available at the time of
-            an accident and uses the Random Forest pipeline to predict the
-            most likely severity level.
+            an accident and uses the Random Forest model trained on the
+            BAAC data to predict the most likely severity level.
             """
         )
 
